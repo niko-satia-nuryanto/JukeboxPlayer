@@ -80,7 +80,7 @@ class MainActivity : Activity() {
     private fun askUrl() {
         val box = EditText(this)
         box.setText(
-            getPreferences(MODE_PRIVATE).getString("url", "http://192-168-110-122.nip.io:3001/player")
+            getPreferences(MODE_PRIVATE).getString("url", "http://192-168-110-122.nip.io:3000/player")
         )
         AlertDialog.Builder(this)
             .setTitle("Jukebox server address (/player)")
