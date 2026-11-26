@@ -13,8 +13,10 @@ import android.provider.Settings
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
@@ -48,8 +50,14 @@ class MainActivity : Activity() {
             javaScriptEnabled = true
             domStorageEnabled = true
             mediaPlaybackRequiresUserGesture = false
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            javaScriptCanOpenWindowsAutomatically = true
             userAgentString = userAgentString + " JukeboxApp"
         }
+        // YouTube's embedded player needs third-party cookies, which WebView blocks by default.
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
+        WebView.setWebContentsDebuggingEnabled(true)
         web.addJavascriptInterface(Bridge(), "JukeboxBridge")
         web.webViewClient = WebViewClient()
         web.webChromeClient = WebChromeClient()
