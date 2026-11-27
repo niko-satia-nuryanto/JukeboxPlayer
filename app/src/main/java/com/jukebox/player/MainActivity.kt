@@ -8,6 +8,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.Menu
@@ -20,6 +22,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
+import java.util.Calendar
 
 // Technique learned from NouTube: a WebView that always reports its window as
 // VISIBLE, so Chromium never treats the page as hidden when the screen locks.
@@ -34,6 +37,41 @@ class KeepAliveWebView(context: Context) : WebView(context) {
 class MainActivity : Activity() {
     private lateinit var web: KeepAliveWebView
     @Volatile private var base = ""
+    private val handler = Handler(Looper.getMainLooper())
+    private var mode = "" // "yt" before the switch time, "jukebox" after
+
+    companion object {
+        const val DEFAULT_URL = "http://192-168-110-122.nip.io:3000/player"
+        // Daily switch time (phone's local clock). Edit these two numbers to change it.
+        const val SWITCH_HOUR = 9
+        const val SWITCH_MIN = 20
+    }
+
+    private fun afterSwitch(): Boolean {
+        val c = Calendar.getInstance()
+        return c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE) >= SWITCH_HOUR * 60 + SWITCH_MIN
+    }
+
+    private fun serverUrl(): String =
+        getPreferences(MODE_PRIVATE).getString("server_url", DEFAULT_URL) ?: DEFAULT_URL
+
+    private val tick = object : Runnable {
+        override fun run() {
+            if (mode == "yt" && afterSwitch()) openJukebox()
+            handler.postDelayed(this, 15000)
+        }
+    }
+
+    private fun openYoutube() {
+        mode = "yt"
+        base = ""
+        web.loadUrl("https://m.youtube.com")
+    }
+
+    private fun openJukebox() {
+        mode = "jukebox"
+        load(serverUrl())
+    }
 
     inner class Bridge {
         @JavascriptInterface
@@ -67,8 +105,8 @@ class MainActivity : Activity() {
         }
         startForegroundService(Intent(this, PlayerService::class.java))
 
-        val saved = getPreferences(MODE_PRIVATE).getString("url", null)
-        if (saved == null) askUrl() else load(saved)
+        if (afterSwitch()) openJukebox() else openYoutube()
+        handler.postDelayed(tick, 15000)
     }
 
     private fun load(url: String) {
@@ -79,18 +117,16 @@ class MainActivity : Activity() {
 
     private fun askUrl() {
         val box = EditText(this)
-        box.setText(
-            getPreferences(MODE_PRIVATE).getString("url", "http://192-168-110-122.nip.io:3000/player")
-        )
+        box.setText(serverUrl())
         AlertDialog.Builder(this)
             .setTitle("Jukebox server address (/player)")
             .setView(box)
-            .setCancelable(false)
             .setPositiveButton("OK") { _, _ ->
                 val u = box.text.toString().trim()
-                getPreferences(MODE_PRIVATE).edit().putString("url", u).apply()
-                load(u)
+                getPreferences(MODE_PRIVATE).edit().putString("server_url", u).apply()
+                if (mode == "jukebox") load(u)
             }
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
@@ -124,12 +160,13 @@ class MainActivity : Activity() {
     // Back button hides the app instead of closing it, so music keeps playing.
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        moveTaskToBack(true)
+        if (mode == "yt" && web.canGoBack()) web.goBack() else moveTaskToBack(true)
     }
 
     // Deliberately no web.onPause() / onStop handling: the page must keep running.
 
     override fun onDestroy() {
+        handler.removeCallbacks(tick)
         stopService(Intent(this, PlayerService::class.java))
         web.destroy()
         super.onDestroy()
